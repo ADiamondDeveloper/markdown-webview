@@ -1,9 +1,10 @@
 #markdown-rendered {
-    color: -apple-system-label;
-    font-family: system-ui;
-    font-size: 13pt;
-    line-height: 1.5;
+    color: PLACEHOLDER_COLOR;
+    font-family: PLACEHOLDER_FONT;
+    font-size: PLACEHOLDER_SIZE_FONT;
+    line-height: PLACEHOLDER_LINE_HEIGHT;
     word-wrap: break-word;
+    opacity: PLACEHOLDER_OPACITY;
 }
 
 #markdown-rendered details,
@@ -22,7 +23,7 @@
 
 #markdown-rendered a {
     background-color: transparent;
-    color: -apple-system-blue;
+    color: PLACEHOLDER_LINK_COLOR;
     text-decoration: none;
 }
 
