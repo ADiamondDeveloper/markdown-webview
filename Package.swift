@@ -18,7 +18,12 @@ let package = Package(
             name: "MarkdownWebView",
             resources: [.copy("Resources/template"),
                         .copy("Resources/script"),
-                        .copy("Resources/stylesheets/default-iOS")]
+                        .copy("Resources/stylesheets/default-iOS"),
+                        .copy("Resources/stylesheets/fontawesome.css"),
+                        .copy("Resources/stylesheets/katexStyle.css"),
+                        .copy("Resources/stylesheets/katexScript.js"),
+                        .copy("Resources/stylesheets/texmathStyle.css"),
+                        .copy("Resources/stylesheets/texmathScript.js")]
         ),
     ]
 )

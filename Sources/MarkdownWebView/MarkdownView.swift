@@ -76,10 +76,27 @@ public class MarkdownView: UIView {
         guard
             let templateURL = bundle.url(forResource: "template", withExtension: ""),
             let template = try? String(contentsOf: templateURL),
+            
             let scriptURL = bundle.url(forResource: "script", withExtension: ""),
             let script = try? String(contentsOf: scriptURL),
+            
             let stylesheetURL = bundle.url(forResource: "default-iOS", withExtension: ""),
-            var defaultStylesheet = try? String(contentsOf: stylesheetURL)
+            var defaultStylesheet = try? String(contentsOf: stylesheetURL),
+            
+            let fontawesomeCSSURL = bundle.url(forResource: "fontawesome", withExtension: "css"),
+            let fontawesome = try? String(contentsOf: fontawesomeCSSURL),
+            
+            let katexJSURL = bundle.url(forResource: "katexScript", withExtension: "js"),
+            let katexJS = try? String(contentsOf: katexJSURL),
+            
+            let texmathJSURL = bundle.url(forResource: "texmathScript", withExtension: "js"),
+            let texmathJS = try? String(contentsOf: texmathJSURL),
+            
+            let katexCSSURL = bundle.url(forResource: "katexStyle", withExtension: "css"),
+            let katexCSS = try? String(contentsOf: katexCSSURL),
+            
+            let texmathCSSURL = bundle.url(forResource: "texmathStyle", withExtension: "css"),
+            let texmathCSS = try? String(contentsOf: texmathCSSURL)
         else {
             print("Failed to load resources.")
             return
@@ -93,9 +110,18 @@ public class MarkdownView: UIView {
             .replacingOccurrences(of: "PLACEHOLDER_LINE_HEIGHT", with: "1.5")
             .replacingOccurrences(of: "PLACEHOLDER_OPACITY", with: "\(opacity)")
         
+        let inlineAssets = """
+        <style>\(fontawesome)</style>
+        <style>\(katexCSS)</style>
+        <style>\(texmathCSS)</style>
+        <script>\(katexJS)</script>
+        <script>\(texmathJS)</script>
+        """
+        
         let html = template
             .replacingOccurrences(of: "PLACEHOLDER_SCRIPT", with: script)
             .replacingOccurrences(of: "PLACEHOLDER_STYLESHEET", with: customStylesheet ?? defaultStylesheet)
+            .replacingOccurrences(of: "PLACEHOLDER_INLINE_ASSETS", with: inlineAssets)
         
         webView.loadHTMLString(html, baseURL: nil)
     }
