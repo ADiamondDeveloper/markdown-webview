@@ -180,6 +180,10 @@ extension MarkdownView: WKNavigationDelegate, WKScriptMessageHandler {
             break
         }
     }
+    
+    public func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        loadHTML()
+    }
 }
 
 extension String {
