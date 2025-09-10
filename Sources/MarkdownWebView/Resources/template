@@ -76,6 +76,7 @@
                 return ``;
             },
             linkify: true,
+            html: true
         })
             .use(window.markdownitMark)
             .use(window.markdownitTaskLists)
@@ -90,9 +91,28 @@
 
         const markdownRenderedElement = document.getElementById(`markdown-rendered`);
 
-        window.updateWithMarkdownContentBase64Encoded = (markdownContentBase64Encoded) => {
+        window.updateWithMarkdownContentBase64Encoded = (markdownContentBase64Encoded, withButton) => {
             const markdownContent = decodeURIComponent(atob(markdownContentBase64Encoded).split(``).map(function (c) {return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);}).join(``));
-            markdownRenderedElement.innerHTML = markdownIt.render(markdownContent);
+            
+            if (withButton) {
+                const inlineButtonHTML = `
+                <button style="
+                    padding: 4px 8px;
+                    line-height: 1.5;
+                    color: PLACEHOLDER_LINK_COLOR;
+                    border: none;
+                    border-radius: 9999px;
+                    cursor: pointer;
+                    " onclick="window.webkit.messageHandlers.sourcesTapped.postMessage('')">
+                    PLACEHOLDER_BUTTON_TEXT
+                </button>
+                `;
+            
+                markdownRenderedElement.innerHTML = markdownIt.render(markdownContent + inlineButtonHTML);
+            } else {
+                markdownRenderedElement.innerHTML = markdownIt.render(markdownContent);
+            }
+
             addCopyButtons()
             window.webkit.messageHandlers.renderedContentHandler.postMessage(markdownContentBase64Encoded);
         }

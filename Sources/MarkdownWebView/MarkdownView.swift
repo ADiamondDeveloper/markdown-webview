@@ -12,6 +12,7 @@ public class MarkdownView: UIView {
     
     public var webView: WKWebView
     public var markdownContent: String
+    public var withButton: Bool = false
     private var customStylesheet: String?
     
     private var mainFont: UIFont
@@ -22,6 +23,9 @@ public class MarkdownView: UIView {
     public var onTapLink: ((URL) -> Void)?
     public var renderedContentHandler: ((String) -> Void)?
     public var sizeChangeHandler: ((CGSize) -> Void)?
+    public var showSourceResultsList: (() -> Void)?
+    
+    private var sourcesButtonText: String
     
     public init(
         markdownContent: String,
@@ -29,7 +33,8 @@ public class MarkdownView: UIView {
         mainFont: UIFont = .systemFont(ofSize: 17),
         textColor: String = "#FFFFFF",
         linkColor: String = "#3ACF9A",
-        opacity: CGFloat = 0.85
+        opacity: CGFloat = 0.85,
+        sourcesButtonText: String = "Sources",
     ) {
         self.markdownContent = markdownContent
         self.customStylesheet = customStylesheet
@@ -37,7 +42,7 @@ public class MarkdownView: UIView {
         self.textColor = textColor
         self.linkColor = linkColor
         self.opacity = opacity
-        
+        self.sourcesButtonText = sourcesButtonText
         let config = WKWebViewConfiguration()
         let userContentController = WKUserContentController()
         config.userContentController = userContentController
@@ -63,7 +68,7 @@ public class MarkdownView: UIView {
         userContentController.add(self, name: "sizeChangeHandler")
         userContentController.add(self, name: "renderedContentHandler")
         userContentController.add(self, name: "copyToPasteboard")
-        
+        userContentController.add(self, name: "sourcesTapped")
         loadHTML()
     }
     
@@ -122,22 +127,32 @@ public class MarkdownView: UIView {
             .replacingOccurrences(of: "PLACEHOLDER_SCRIPT", with: script)
             .replacingOccurrences(of: "PLACEHOLDER_STYLESHEET", with: customStylesheet ?? defaultStylesheet)
             .replacingOccurrences(of: "PLACEHOLDER_INLINE_ASSETS", with: inlineAssets)
+            .replacingOccurrences(of: "PLACEHOLDER_LINK_COLOR", with: linkColor)
+            .replacingOccurrences(of: "PLACEHOLDER_BUTTON_TEXT", with: sourcesButtonText)
         
         webView.loadHTMLString(html, baseURL: nil)
     }
     
-    public func updateMarkdownContent(_ content: String) {
+    public func updateMarkdownContent(_ content: String, withButton: Bool) {
         self.markdownContent = content
+        self.withButton = withButton
         guard let encoded = content.data(using: .utf8)?.base64EncodedString() else { return }
-        webView.callAsyncJavaScript("window.updateWithMarkdownContentBase64Encoded(`\(encoded)`)", in: nil, in: .page, completionHandler: nil)
+        
+        webView.callAsyncJavaScript(
+            "window.updateWithMarkdownContentBase64Encoded(`\(encoded)`, \(withButton))",
+            in: nil,
+            in: .page,
+            completionHandler: nil
+        )
     }
+
 }
 
 // MARK: - WKNavigationDelegate, WKScriptMessageHandler
 
 extension MarkdownView: WKNavigationDelegate, WKScriptMessageHandler {
     public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        updateMarkdownContent(markdownContent)
+        updateMarkdownContent(markdownContent, withButton: withButton)
     }
     
     public func webView(_ webView: WKWebView,
@@ -176,6 +191,8 @@ extension MarkdownView: WKNavigationDelegate, WKScriptMessageHandler {
                 let str = String(data: Data(base64Encoded: base64) ?? Data(), encoding: .utf8) ?? ""
                 UIPasteboard.general.string = str
             }
+        case "sourcesTapped":
+            showSourceResultsList?()
         default:
             break
         }
