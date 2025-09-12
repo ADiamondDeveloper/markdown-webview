@@ -34,7 +34,7 @@ public class MarkdownView: UIView {
         textColor: String = "#FFFFFF",
         linkColor: String = "#3ACF9A",
         opacity: CGFloat = 0.85,
-        sourcesButtonText: String = "Sources",
+        sourcesButtonText: String = "Sources"
     ) {
         self.markdownContent = markdownContent
         self.customStylesheet = customStylesheet
