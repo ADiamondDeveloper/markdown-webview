@@ -36,6 +36,6 @@ public struct MarkdownWebView: UIViewRepresentable {
     }
 
     public func updateUIView(_ uiView: MarkdownView, context: Context) {
-        uiView.updateMarkdownContent(markdownContent, withButton: uiView.withButton)
+        uiView.updateMarkdownContent(markdownContent, withButton: uiView.withButton, imageUrls: uiView.imageUrls)
     }
 }

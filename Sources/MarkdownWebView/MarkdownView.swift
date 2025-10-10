@@ -13,6 +13,7 @@ public class MarkdownView: UIView {
     public var webView: WKWebView
     public var markdownContent: String
     public var withButton: Bool = false
+    public var imageUrls: [String] = []
     private var customStylesheet: String?
     
     private var mainFont: UIFont
@@ -133,13 +134,22 @@ public class MarkdownView: UIView {
         webView.loadHTMLString(html, baseURL: nil)
     }
     
-    public func updateMarkdownContent(_ content: String, withButton: Bool) {
+    public func updateMarkdownContent(_ content: String, withButton: Bool, imageUrls base64: [String]) {
         self.markdownContent = content
         self.withButton = withButton
+        self.imageUrls = Array(base64.prefix(3))
         guard let encoded = content.data(using: .utf8)?.base64EncodedString() else { return }
-        
+
+        let urlsJSArray: String
+        if imageUrls.isEmpty {
+            urlsJSArray = "[]"
+        } else {
+            let urlStrings = imageUrls.map { "\"data:image/png;base64,\($0)\"" }.joined(separator: ", ")
+            urlsJSArray = "[\(urlStrings)]"
+        }
+
         webView.callAsyncJavaScript(
-            "window.updateWithMarkdownContentBase64Encoded(`\(encoded)`, \(withButton))",
+            "window.updateWithMarkdownContentBase64Encoded(`\(encoded)`, \(withButton), \(urlsJSArray))",
             in: nil,
             in: .page,
             completionHandler: nil
@@ -152,7 +162,7 @@ public class MarkdownView: UIView {
 
 extension MarkdownView: WKNavigationDelegate, WKScriptMessageHandler {
     public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        updateMarkdownContent(markdownContent, withButton: withButton)
+        updateMarkdownContent(markdownContent, withButton: withButton, imageUrls: imageUrls)
     }
     
     public func webView(_ webView: WKWebView,

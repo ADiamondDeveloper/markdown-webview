@@ -91,23 +91,41 @@
 
         const markdownRenderedElement = document.getElementById(`markdown-rendered`);
 
-        window.updateWithMarkdownContentBase64Encoded = (markdownContentBase64Encoded, withButton) => {
+        window.updateWithMarkdownContentBase64Encoded = (markdownContentBase64Encoded, withButton, imageUrlsArray) => {
             const markdownContent = decodeURIComponent(atob(markdownContentBase64Encoded).split(``).map(function (c) {return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);}).join(``));
             
             if (withButton) {
+                let urls = Array.isArray(imageUrlsArray) ? imageUrlsArray.slice(0, 3) : [];
+                let imagesHTML = '';
+
+                if (urls.length > 0) {
+                    urls.forEach((url, idx) => {
+                        let marginLeft = idx === 0 ? '' : 'margin-left: -5px;';
+                        let zIndex = 3 - idx;
+                        imagesHTML += `<img src="${url}"
+                            style="width: 13px; height: 13px; object-fit: cover; border-radius: 50%; border: 0.5px solid #dddddd; ${marginLeft} z-index: ${zIndex};" />`;
+                    });
+                    imagesHTML = `<div style="display: flex; align-items: center; margin-right: 0;">${imagesHTML}</div>`;
+                }
+
                 const inlineButtonHTML = `
                 <button style="
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 4px;
                     padding: 4px 8px;
                     line-height: 1.5;
                     color: PLACEHOLDER_LINK_COLOR;
                     border: none;
                     border-radius: 9999px;
                     cursor: pointer;
+                    vertical-align: middle;
                     " onclick="window.webkit.messageHandlers.sourcesTapped.postMessage('')">
-                    PLACEHOLDER_BUTTON_TEXT
+                    ${imagesHTML || ''} PLACEHOLDER_BUTTON_TEXT
                 </button>
                 `;
-            
+
                 markdownRenderedElement.innerHTML = markdownIt.render(markdownContent + inlineButtonHTML);
             } else {
                 markdownRenderedElement.innerHTML = markdownIt.render(markdownContent);
