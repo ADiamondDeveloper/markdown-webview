@@ -125,8 +125,15 @@
                     ${imagesHTML || ''} PLACEHOLDER_BUTTON_TEXT <span style="font-size: 12px; display: inline-block; transform: scaleX(0.5);">></span>
                 </button>
                 `;
-
-                markdownRenderedElement.innerHTML = markdownIt.render(markdownContent + inlineButtonHTML);
+                markdownRenderedElement.innerHTML = markdownIt.render(markdownContent);
+                const lastChild = markdownRenderedElement.lastElementChild;
+                const isBlock = lastChild && ['TABLE', 'PRE', 'UL', 'OL', 'BLOCKQUOTE'].includes(lastChild.tagName);
+                
+                if (isBlock) {
+                    markdownRenderedElement.insertAdjacentHTML('beforeend', inlineButtonHTML);
+                } else {
+                    markdownRenderedElement.innerHTML = markdownIt.render(markdownContent + inlineButtonHTML);
+                }
             } else {
                 markdownRenderedElement.innerHTML = markdownIt.render(markdownContent);
             }
