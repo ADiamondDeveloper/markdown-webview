@@ -127,10 +127,14 @@
                 `;
                 markdownRenderedElement.innerHTML = markdownIt.render(markdownContent);
                 const lastChild = markdownRenderedElement.lastElementChild;
-                const isBlock = lastChild && ['TABLE', 'PRE', 'UL', 'OL', 'BLOCKQUOTE'].includes(lastChild.tagName);
-                
+                const isBlock = lastChild && ['TABLE', 'PRE', 'UL', 'OL', 'BLOCKQUOTE', 'HR'].includes(lastChild.tagName);
+
                 if (isBlock) {
-                    markdownRenderedElement.insertAdjacentHTML('beforeend', inlineButtonHTML);
+                    if (lastChild && lastChild.tagName === 'HR') {
+                        lastChild.insertAdjacentHTML('beforebegin', inlineButtonHTML);
+                    } else {
+                        markdownRenderedElement.insertAdjacentHTML('beforeend', inlineButtonHTML);
+                    }
                 } else {
                     markdownRenderedElement.innerHTML = markdownIt.render(markdownContent + inlineButtonHTML);
                 }
