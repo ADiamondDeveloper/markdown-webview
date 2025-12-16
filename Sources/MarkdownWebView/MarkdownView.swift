@@ -23,6 +23,7 @@ public class MarkdownView: UIView {
     
     public var onTapLink: ((URL) -> Void)?
     public var renderedContentHandler: ((String) -> Void)?
+    public var selectionClearedHandler: (() -> Void)?
     public var sizeChangeHandler: ((CGSize) -> Void)?
     public var showSourceResultsList: (() -> Void)?
     
@@ -70,6 +71,7 @@ public class MarkdownView: UIView {
         userContentController.add(self, name: "renderedContentHandler")
         userContentController.add(self, name: "copyToPasteboard")
         userContentController.add(self, name: "sourcesTapped")
+        userContentController.add(self, name: "selectionCleared")
         loadHTML()
     }
     
@@ -122,6 +124,20 @@ public class MarkdownView: UIView {
         <style>\(texmathCSS)</style>
         <script>\(katexJS)</script>
         <script>\(texmathJS)</script>
+        <script>
+        (function () {
+            if (window.__selectionObserverInstalled) return;
+
+            document.addEventListener('selectionchange', function () {
+                const sel = window.getSelection();
+                if (!sel || sel.isCollapsed) {
+                    window.webkit.messageHandlers.selectionCleared.postMessage('cleared');
+                }
+            });
+
+            window.__selectionObserverInstalled = true;
+        })();
+        </script>
         """
         
         let html = template
@@ -203,6 +219,8 @@ extension MarkdownView: WKNavigationDelegate, WKScriptMessageHandler {
             }
         case "sourcesTapped":
             showSourceResultsList?()
+        case "selectionCleared":
+            selectionClearedHandler?()
         default:
             break
         }
