@@ -150,6 +150,12 @@ public class MarkdownView: UIView {
         webView.loadHTMLString(html, baseURL: nil)
     }
     
+    public func updateTextColor(_ hexColor: String) {
+        self.textColor = hexColor
+        let js = "document.getElementById('markdown-rendered').style.color = '\(hexColor)';"
+        webView.evaluateJavaScript(js, completionHandler: nil)
+    }
+
     public func updateMarkdownContent(_ content: String, withButton: Bool, imageUrls base64: [String]) {
         self.markdownContent = content
         self.withButton = withButton
