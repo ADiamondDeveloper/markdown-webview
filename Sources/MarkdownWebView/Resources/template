@@ -54,6 +54,84 @@
             opacity: 0;
             transition: opacity 0.2s ease-in-out;
         }
+
+        /* Invert only when app theme ≠ content theme */
+        body.dark-theme .artifact-iframe[data-content-theme="light"],
+        body:not(.dark-theme) .artifact-iframe[data-content-theme="dark"] {
+            filter: invert(1) hue-rotate(180deg);
+        }
+
+        /* Interactive Artifact Styles */
+        .artifact-container {
+            position: relative;
+            margin: 4px 0;
+        }
+        .artifact-header {
+            display: none;
+        }
+        .artifact-header.visible {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding: 4px 0;
+        }
+        .artifact-header-label {
+            display: none;
+        }
+        .artifact-toggle-btn {
+            background: none;
+            border: 1px solid rgba(128, 128, 128, 0.25);
+            border-radius: 6px;
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 11px;
+            padding: 2px 8px;
+            cursor: pointer;
+            font-family: system-ui;
+        }
+        .artifact-iframe {
+            width: 100%;
+            border: none;
+            background: transparent;
+            display: block;
+            min-height: 100px;
+            transition: height 0.2s ease;
+        }
+        .artifact-code-fallback {
+            display: none;
+        }
+        .artifact-streaming-placeholder {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 16px;
+            border-radius: 12px;
+            background: rgba(128, 128, 128, 0.08);
+            border: 1px solid rgba(128, 128, 128, 0.15);
+            margin: 8px 0;
+            font-size: 13px;
+            color: rgba(128, 128, 128, 0.7);
+            font-family: system-ui;
+        }
+        .artifact-streaming-spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(128, 128, 128, 0.2);
+            border-top-color: rgba(128, 128, 128, 0.6);
+            border-radius: 50%;
+            animation: artifact-spin 0.8s linear infinite;
+        }
+        @keyframes artifact-spin {
+            to { transform: rotate(360deg); }
+        }
+        .artifact-container.show-code .artifact-iframe {
+            display: none;
+        }
+        .artifact-container.show-code .artifact-code-fallback {
+            display: block;
+        }
+        .artifact-container.show-code .artifact-header {
+            display: flex;
+        }
     </style>
     PLACEHOLDER_INLINE_ASSETS
 </head>
@@ -92,8 +170,11 @@
         const markdownRenderedElement = document.getElementById(`markdown-rendered`);
 
         window.updateWithMarkdownContentBase64Encoded = (markdownContentBase64Encoded, withButton, imageUrlsArray) => {
-            const markdownContent = decodeURIComponent(atob(markdownContentBase64Encoded).split(``).map(function (c) {return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);}).join(``));
-            
+            let markdownContent = decodeURIComponent(atob(markdownContentBase64Encoded).split(``).map(function (c) {return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);}).join(``));
+
+            // Hide incomplete HTML code blocks during streaming
+            markdownContent = preprocessStreamingArtifacts(markdownContent);
+
             if (withButton) {
                 let urls = Array.isArray(imageUrlsArray) ? imageUrlsArray.slice(0, 3) : [];
                 let imagesHTML = '';
@@ -143,8 +224,295 @@
             }
 
             addCopyButtons()
+            processArtifacts()
             window.webkit.messageHandlers.renderedContentHandler.postMessage(markdownContentBase64Encoded);
         }
+
+        // --- Streaming: hide incomplete HTML code blocks ---
+        function preprocessStreamingArtifacts(md) {
+            // Check if there's an unclosed ```html block (streaming in progress)
+            // Match ```html that doesn't have a closing ```
+            const openPattern = /```html\s*\n/gi;
+            const allFences = [...md.matchAll(/```/g)];
+
+            // Find all ```html openings
+            const htmlOpens = [...md.matchAll(/```html\s*\n/gi)];
+            if (htmlOpens.length === 0) return md;
+
+            const lastOpen = htmlOpens[htmlOpens.length - 1];
+            const afterOpen = md.substring(lastOpen.index + lastOpen[0].length);
+
+            // Check if there's a closing ``` after the last ```html
+            if (!/```/.test(afterOpen)) {
+                // Incomplete block — replace with placeholder
+                const beforeBlock = md.substring(0, lastOpen.index);
+                return beforeBlock + '\n<div class="artifact-streaming-placeholder"><div class="artifact-streaming-spinner"></div>Generating interactive content...</div>\n';
+            }
+
+            return md;
+        }
+
+        // --- Interactive Artifact Support ---
+        function isInteractiveHTML(code) {
+            return /<script[\s>]/i.test(code) ||
+                   /oninput\s*=/i.test(code) ||
+                   /onclick\s*=/i.test(code) ||
+                   /onchange\s*=/i.test(code) ||
+                   /<canvas[\s>]/i.test(code) ||
+                   /<svg[\s>]/i.test(code) ||
+                   /<input[\s>]/i.test(code) ||
+                   /<select[\s>]/i.test(code) ||
+                   /<button[\s>]/i.test(code);
+        }
+
+        function extractArtifactTitle(code) {
+            const titleMatch = code.match(/<title>(.*?)<\/title>/i);
+            if (titleMatch) return titleMatch[1];
+            const h1Match = code.match(/<h1[^>]*>(.*?)<\/h1>/i);
+            if (h1Match) return h1Match[1].replace(/<[^>]+>/g, '');
+            return 'Interactive';
+        }
+
+        function sanitizeArtifactHTML(code) {
+            // Strip any attempts to access webkit messageHandlers
+            return code.replace(/window\.webkit\.messageHandlers/g, '/* blocked */void 0')
+                       .replace(/parent\./g, '/* blocked */void 0.');
+        }
+
+        function createArtifactIframe(htmlContent) {
+            const iframe = document.createElement('iframe');
+            iframe.className = 'artifact-iframe';
+            iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin');
+            iframe.setAttribute('allowtransparency', 'true');
+            iframe.style.colorScheme = 'normal';
+
+            const safeHTML = sanitizeArtifactHTML(htmlContent);
+
+            // Default styles for iframe content — compact for mobile
+            const defaultStyles = `<style>
+                * { box-sizing: border-box; }
+                html, body {
+                    margin: 0; padding: 0;
+                    font-family: system-ui, -apple-system, sans-serif;
+                    font-size: 14px; line-height: 1.4;
+                    -webkit-text-size-adjust: 100%;
+                    background: transparent;
+                }
+                h1 { font-size: 18px; margin: 0 0 8px; }
+                h2 { font-size: 16px; margin: 0 0 6px; }
+                h3 { font-size: 15px; margin: 0 0 4px; }
+                p { margin: 4px 0; font-size: 14px; }
+                label, span, div { font-size: 14px; }
+                small, sub, sup, figcaption, caption { font-size: 13px; }
+                svg text, svg tspan { font-size: 13px !important; }
+                input[type="range"] { width: 100%; }
+                canvas { max-width: 100%; height: auto; }
+                .katex { font-size: 1em !important; }
+            </style>`;
+
+            // Canvas min-font patch — MUST be in <head> before any scripts run
+            // Note: <\/script> is split to avoid HTML parser closing the outer script tag
+            const canvasPatch = `<${'script'}>
+                (function() {
+                    var minFS = 13;
+                    var origFont = Object.getOwnPropertyDescriptor(CanvasRenderingContext2D.prototype, "font");
+                    if (origFont && origFont.set) {
+                        Object.defineProperty(CanvasRenderingContext2D.prototype, "font", {
+                            set: function(v) {
+                                var m = v.match(/(\\d+(?:\\.\\d+)?)(px|pt|em|rem)/i);
+                                if (m) {
+                                    var s = parseFloat(m[1]);
+                                    var u = m[2];
+                                    if (u === "px" && s < minFS) v = v.replace(m[0], minFS + "px");
+                                    else if (u === "pt" && s < minFS * 0.75) v = v.replace(m[0], (minFS * 0.75) + "pt");
+                                }
+                                origFont.set.call(this, v);
+                            },
+                            get: function() { return origFont.get.call(this); },
+                            configurable: true
+                        });
+                    }
+                })();
+            </${'script'}>`;
+
+            // Wrap in full HTML if it's a fragment
+            let fullHTML = safeHTML;
+            if (!/<html[\s>]/i.test(safeHTML)) {
+                fullHTML = '<!DOCTYPE html><html><head>' +
+                    '<meta charset="UTF-8">' +
+                    '<meta name="viewport" content="width=device-width, initial-scale=1.0">' +
+                    defaultStyles + canvasPatch +
+                    '</head><body>' + safeHTML + '</body></html>';
+            } else {
+                fullHTML = fullHTML.replace('</he' + 'ad>', defaultStyles + canvasPatch + '</he' + 'ad>');
+            }
+
+            // Inject theme + KaTeX math rendering + resize reporter
+            const resizeScript = `<${'script'}>
+                (function() {
+                    // --- KaTeX formula rendering via parent ---
+                    try {
+                        var pk = parent.katex;
+                        if (pk) {
+                            // Copy KaTeX CSS from parent into iframe
+                            var styles = parent.document.querySelectorAll("style");
+                            styles.forEach(function(s) {
+                                if (s.textContent.indexOf(".katex") !== -1) {
+                                    var c = document.createElement("style");
+                                    c.textContent = s.textContent;
+                                    document.head.appendChild(c);
+                                }
+                            });
+
+                            // Walk text nodes and render $...$ formulas
+                            function walkMath(node) {
+                                if (node.nodeType === 3) {
+                                    var t = node.textContent;
+                                    if (t.indexOf("$") === -1) return;
+                                    var span = document.createElement("span");
+                                    span.innerHTML = t
+                                        .replace(/\\$\\$([\\s\\S]+?)\\$\\$/g, function(m, f) {
+                                            try { return pk.renderToString(f, { displayMode: true, throwOnError: false }); }
+                                            catch(e) { return m; }
+                                        })
+                                        .replace(/\\$([^\\$\\s][^\\$]*?[^\\$\\s])\\$/g, function(m, f) {
+                                            try { return pk.renderToString(f, { throwOnError: false }); }
+                                            catch(e) { return m; }
+                                        })
+                                        .replace(/\\$([^\\$\\s])\\$/g, function(m, f) {
+                                            try { return pk.renderToString(f, { throwOnError: false }); }
+                                            catch(e) { return m; }
+                                        });
+                                    if (span.innerHTML !== t) node.parentNode.replaceChild(span, node);
+                                } else if (node.nodeType === 1 && !/^(SCRIPT|STYLE|PRE|CODE|TEXTAREA)$/.test(node.tagName)) {
+                                    Array.from(node.childNodes).forEach(walkMath);
+                                }
+                            }
+                            walkMath(document.body);
+                        }
+                    } catch(e) {}
+
+                    // --- Resize reporter ---
+                    function reportHeight() {
+                        var h = Math.ceil(document.documentElement.scrollHeight);
+                        window.parent.postMessage({ type: "artifact-resize", height: h }, "*");
+                    }
+                    new ResizeObserver(reportHeight).observe(document.body);
+                    reportHeight();
+                    setTimeout(reportHeight, 300);
+                    setTimeout(reportHeight, 1000);
+                })();
+            </${'script'}>`;
+
+            fullHTML = fullHTML.replace('</bo' + 'dy>', resizeScript + '</bo' + 'dy>');
+
+            iframe.srcdoc = fullHTML;
+            return iframe;
+        }
+
+        function processArtifacts() {
+            // Find all code blocks with language "html"
+            const codeBlocks = markdownRenderedElement.querySelectorAll('pre code.language-html, pre code.hljs.language-html');
+
+            codeBlocks.forEach((codeEl) => {
+                const code = codeEl.textContent;
+                if (!isInteractiveHTML(code)) return;
+
+                const preEl = codeEl.closest('pre');
+                // Check if already wrapped by copy-button wrapper
+                const wrapper = preEl.parentElement.classList.contains('code-block-wrapper')
+                    ? preEl.parentElement
+                    : preEl;
+
+                const title = extractArtifactTitle(code);
+
+                const container = document.createElement('div');
+                container.className = 'artifact-container';
+
+                // Header (hidden by default, shown in code view)
+                const header = document.createElement('div');
+                header.className = 'artifact-header';
+
+                const toggleBtn = document.createElement('button');
+                toggleBtn.className = 'artifact-toggle-btn';
+                toggleBtn.textContent = 'Preview';
+                toggleBtn.addEventListener('click', () => {
+                    container.classList.toggle('show-code');
+                    toggleBtn.textContent = container.classList.contains('show-code') ? 'Preview' : 'Code';
+                });
+
+                header.appendChild(toggleBtn);
+
+                // Iframe
+                const iframe = createArtifactIframe(code);
+                iframe.setAttribute('data-content-theme', detectContentTheme(code));
+
+                // Code fallback (the original pre block)
+                const codeFallback = document.createElement('div');
+                codeFallback.className = 'artifact-code-fallback';
+                codeFallback.appendChild(wrapper.cloneNode(true));
+
+                container.appendChild(header);
+                container.appendChild(iframe);
+                container.appendChild(codeFallback);
+
+                wrapper.replaceWith(container);
+            });
+        }
+
+        // Detect content theme from raw HTML source by checking text color
+        function detectContentTheme(html) {
+            // Check color on body, then h1/h2, then first color declaration
+            var match = html.match(/body\s*\{[^}]*?\bcolor\s*:\s*(#[0-9a-fA-F]{3,8}|rgb[a]?\([^)]+\))/i)
+                     || html.match(/h[12]\s*\{[^}]*?\bcolor\s*:\s*(#[0-9a-fA-F]{3,8}|rgb[a]?\([^)]+\))/i)
+                     || html.match(/\bcolor\s*:\s*(#[0-9a-fA-F]{3,8}|rgb[a]?\([^)]+\))/i);
+            if (!match) return 'light'; // no color found — default web has dark text = light theme
+
+            var color = match[1];
+            var lum = colorLuminance(color);
+            // Dark text (low luminance) = light theme; Light text (high luminance) = dark theme
+            return lum > 128 ? 'dark' : 'light';
+        }
+
+        function colorLuminance(color) {
+            var r, g, b;
+            if (color.charAt(0) === '#') {
+                var hex = color.slice(1);
+                if (hex.length === 3) {
+                    r = parseInt(hex[0] + hex[0], 16);
+                    g = parseInt(hex[1] + hex[1], 16);
+                    b = parseInt(hex[2] + hex[2], 16);
+                } else {
+                    r = parseInt(hex.slice(0, 2), 16);
+                    g = parseInt(hex.slice(2, 4), 16);
+                    b = parseInt(hex.slice(4, 6), 16);
+                }
+            } else {
+                var parts = color.match(/(\d+),\s*(\d+),\s*(\d+)/);
+                if (!parts) return 0;
+                r = parseInt(parts[1]);
+                g = parseInt(parts[2]);
+                b = parseInt(parts[3]);
+            }
+            return (r * 299 + g * 587 + b * 114) / 1000;
+        }
+
+        // Theme: toggle CSS class on body — filter is applied via CSS rule
+        window.updateArtifactTheme = function(isDark) {
+            document.body.classList.toggle('dark-theme', isDark);
+        };
+
+        // Listen for iframe resize messages
+        window.addEventListener('message', (event) => {
+            if (event.data && event.data.type === 'artifact-resize') {
+                const iframes = document.querySelectorAll('.artifact-iframe');
+                iframes.forEach((iframe) => {
+                    if (iframe.contentWindow === event.source) {
+                        iframe.style.height = event.data.height + 'px';
+                    }
+                });
+            }
+        });
 
         function addCopyButtons() {
             const codeBlocks = document.querySelectorAll('pre');

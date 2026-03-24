@@ -20,6 +20,7 @@ public class MarkdownView: UIView {
     private var textColor: String
     private var linkColor: String
     private var opacity: CGFloat
+    private var isDarkTheme: Bool = false
     
     public var onTapLink: ((URL) -> Void)?
     public var renderedContentHandler: ((String) -> Void)?
@@ -156,6 +157,19 @@ public class MarkdownView: UIView {
         webView.evaluateJavaScript(js, completionHandler: nil)
     }
 
+    public func updateArtifactTheme(isDark: Bool) {
+        self.isDarkTheme = isDark
+        webView.overrideUserInterfaceStyle = isDark ? .dark : .light
+        applyThemeClass()
+    }
+
+    private func applyThemeClass() {
+        let js = isDarkTheme
+            ? "document.body && document.body.classList.add('dark-theme');"
+            : "document.body && document.body.classList.remove('dark-theme');"
+        webView.evaluateJavaScript(js, completionHandler: nil)
+    }
+
     public func updateMarkdownContent(_ content: String, withButton: Bool, imageUrls base64: [String]) {
         self.markdownContent = content
         self.withButton = withButton
@@ -184,6 +198,7 @@ public class MarkdownView: UIView {
 
 extension MarkdownView: WKNavigationDelegate, WKScriptMessageHandler {
     public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        applyThemeClass()
         updateMarkdownContent(markdownContent, withButton: withButton, imageUrls: imageUrls)
     }
     
