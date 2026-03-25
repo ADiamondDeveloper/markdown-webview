@@ -168,6 +168,50 @@
             });
 
         const markdownRenderedElement = document.getElementById(`markdown-rendered`);
+        // Offscreen staging element for diffing (outside body to avoid affecting height)
+        const _stagingEl = document.createElement('div');
+        _stagingEl.style.cssText = 'position:absolute;left:-9999px;top:-9999px;visibility:hidden;';
+        document.documentElement.appendChild(_stagingEl);
+
+        // Incremental DOM patch — only update/add/remove changed top-level children
+        // Staging has raw markdown-it output (<pre>, <p>, etc.)
+        // Live DOM may have wrappers: pre → div.code-block-wrapper → div.artifact-container
+        function patchChildren(target, source) {
+            const targetKids = Array.from(target.childNodes);
+            const sourceKids = Array.from(source.childNodes);
+            const len = Math.max(targetKids.length, sourceKids.length);
+            for (let i = 0; i < len; i++) {
+                const tChild = targetKids[i];
+                const sChild = sourceKids[i];
+                if (!sChild) {
+                    tChild.remove();
+                } else if (!tChild) {
+                    target.appendChild(sChild.cloneNode(true));
+                } else {
+                    // Preserve artifact containers — live iframe must not be destroyed
+                    if (tChild.classList && tChild.classList.contains('artifact-container')) continue;
+                    // Preserve code-block wrappers — only update inner <pre> content
+                    if (tChild.classList && tChild.classList.contains('code-block-wrapper')) {
+                        const tPre = tChild.querySelector('pre');
+                        const sPre = sChild.nodeName === 'PRE' ? sChild : (sChild.querySelector && sChild.querySelector('pre'));
+                        if (tPre && sPre && tPre.innerHTML !== sPre.innerHTML) {
+                            tPre.innerHTML = sPre.innerHTML;
+                        }
+                        continue;
+                    }
+                    // Different node type/name — replace
+                    if (tChild.nodeType !== sChild.nodeType || tChild.nodeName !== sChild.nodeName) {
+                        target.replaceChild(sChild.cloneNode(true), tChild);
+                    } else if (tChild.nodeType === 3) {
+                        if (tChild.textContent !== sChild.textContent) {
+                            tChild.textContent = sChild.textContent;
+                        }
+                    } else if (tChild.outerHTML !== sChild.outerHTML) {
+                        target.replaceChild(sChild.cloneNode(true), tChild);
+                    }
+                }
+            }
+        }
 
         window.updateWithMarkdownContentBase64Encoded = (markdownContentBase64Encoded, withButton, imageUrlsArray) => {
             let markdownContent = decodeURIComponent(atob(markdownContentBase64Encoded).split(``).map(function (c) {return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);}).join(``));
@@ -206,22 +250,25 @@
                     ${imagesHTML || ''} PLACEHOLDER_BUTTON_TEXT <span style="font-size: 12px; display: inline-block; transform: scaleX(0.5);">></span>
                 </button>
                 `;
-                markdownRenderedElement.innerHTML = markdownIt.render(markdownContent);
-                const lastChild = markdownRenderedElement.lastElementChild;
+                _stagingEl.innerHTML = markdownIt.render(markdownContent);
+                const lastChild = _stagingEl.lastElementChild;
                 const isBlock = lastChild && ['TABLE', 'PRE', 'UL', 'OL', 'BLOCKQUOTE', 'HR'].includes(lastChild.tagName);
 
                 if (isBlock) {
                     if (lastChild && lastChild.tagName === 'HR') {
                         lastChild.insertAdjacentHTML('beforebegin', inlineButtonHTML);
                     } else {
-                        markdownRenderedElement.insertAdjacentHTML('beforeend', inlineButtonHTML);
+                        _stagingEl.insertAdjacentHTML('beforeend', inlineButtonHTML);
                     }
                 } else {
-                    markdownRenderedElement.innerHTML = markdownIt.render(markdownContent + inlineButtonHTML);
+                    _stagingEl.innerHTML = markdownIt.render(markdownContent + inlineButtonHTML);
                 }
             } else {
-                markdownRenderedElement.innerHTML = markdownIt.render(markdownContent);
+                _stagingEl.innerHTML = markdownIt.render(markdownContent);
             }
+
+            // Patch only changed nodes instead of full innerHTML swap
+            patchChildren(markdownRenderedElement, _stagingEl);
 
             addCopyButtons()
             processArtifacts()
@@ -295,6 +342,7 @@
                     margin: 0; padding: 0;
                     font-family: system-ui, -apple-system, sans-serif;
                     font-size: 14px; line-height: 1.4;
+                    font-variant-numeric: tabular-nums;
                     -webkit-text-size-adjust: 100%;
                     background: transparent;
                 }
@@ -393,14 +441,33 @@
                     } catch(e) {}
 
                     // --- Resize reporter ---
+                    var lastReportedH = 0;
+                    var resizeDebounceTimer = 0;
                     function reportHeight() {
-                        var h = Math.ceil(document.documentElement.scrollHeight);
-                        window.parent.postMessage({ type: "artifact-resize", height: h }, "*");
+                        var body = document.body;
+                        var docEl = document.documentElement;
+                        var h = Math.ceil(Math.max(
+                            body.scrollHeight, body.offsetHeight,
+                            docEl.scrollHeight, docEl.offsetHeight
+                        ));
+                        // Only report if height changed by more than 3px — prevents jitter from dynamic text
+                        if (h > 0 && Math.abs(h - lastReportedH) > 3) {
+                            lastReportedH = h;
+                            window.parent.postMessage({ type: "artifact-resize", height: h }, "*");
+                        }
                     }
-                    new ResizeObserver(reportHeight).observe(document.body);
+                    function debouncedReport() {
+                        clearTimeout(resizeDebounceTimer);
+                        resizeDebounceTimer = setTimeout(reportHeight, 100);
+                    }
+                    new ResizeObserver(debouncedReport).observe(document.body);
+                    new MutationObserver(debouncedReport)
+                        .observe(document.body, { childList: true, subtree: true, attributes: true });
                     reportHeight();
-                    setTimeout(reportHeight, 300);
-                    setTimeout(reportHeight, 1000);
+                    setTimeout(reportHeight, 100);
+                    setTimeout(reportHeight, 500);
+                    setTimeout(reportHeight, 1500);
+                    setTimeout(reportHeight, 3000);
                 })();
             </${'script'}>`;
 
@@ -423,6 +490,9 @@
                 const wrapper = preEl.parentElement.classList.contains('code-block-wrapper')
                     ? preEl.parentElement
                     : preEl;
+
+                // Skip if already processed into an artifact container
+                if (wrapper.parentElement && wrapper.parentElement.classList.contains('artifact-container')) return;
 
                 const title = extractArtifactTitle(code);
 
@@ -508,7 +578,15 @@
                 const iframes = document.querySelectorAll('.artifact-iframe');
                 iframes.forEach((iframe) => {
                     if (iframe.contentWindow === event.source) {
-                        iframe.style.height = event.data.height + 'px';
+                        const newH = event.data.height + 'px';
+                        if (iframe.style.height !== newH) {
+                            iframe.style.height = newH;
+                            // Re-report parent height via debounced path
+                            if (!_resizePending) {
+                                _resizePending = true;
+                                requestAnimationFrame(_flushResize);
+                            }
+                        }
                     }
                 });
             }
@@ -517,18 +595,19 @@
         function addCopyButtons() {
             const codeBlocks = document.querySelectorAll('pre');
             codeBlocks.forEach((codeBlock) => {
+                // Skip if already wrapped
+                if (codeBlock.parentElement && codeBlock.parentElement.classList.contains('code-block-wrapper')) return;
                 const button = document.createElement('button');
                 button.className = 'copy-code-button';
-                button.innerHTML = '<i class="fa-regular fa-clone"></i>'; // Font Awesome copy icon
+                button.innerHTML = '<i class="fa-regular fa-clone"></i>';
                 button.addEventListener('click', async () => {
                     window.webkit.messageHandlers.copyToPasteboard.postMessage(codeBlock.innerText);
-                    button.innerHTML = '<i class="fa-solid fa-check"></i>'; // Font Awesome check icon
+                    button.innerHTML = '<i class="fa-solid fa-check"></i>';
                     button.classList.add('copied');
                     setTimeout(() => {
                         button.innerHTML = '<i class="fa-regular fa-clone"></i>';
                         button.classList.remove('copied');
                     }, 2000);
-                    console.log(codeBlock.textContent);
                 });
                 const wrapper = document.createElement('div');
                 wrapper.className = 'code-block-wrapper';
@@ -539,7 +618,23 @@
         }
 
 
-        const resizeObserver = new ResizeObserver((entries) => {window.webkit.messageHandlers.sizeChangeHandler.postMessage(entries[0].borderBoxSize[0].blockSize)});
+        // Debounced resize reporting — coalesce rapid changes during streaming
+        let _resizePending = false;
+        let _lastReportedHeight = 0;
+        function _flushResize() {
+            _resizePending = false;
+            const h = markdownRenderedElement.getBoundingClientRect().height;
+            if (h > 0 && Math.abs(h - _lastReportedHeight) >= 1) {
+                _lastReportedHeight = h;
+                window.webkit.messageHandlers.sizeChangeHandler.postMessage(h);
+            }
+        }
+        const resizeObserver = new ResizeObserver(() => {
+            if (!_resizePending) {
+                _resizePending = true;
+                requestAnimationFrame(_flushResize);
+            }
+        });
         resizeObserver.observe(markdownRenderedElement);
     </script>
 </body>
