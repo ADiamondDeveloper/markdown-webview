@@ -27,9 +27,11 @@ public class MarkdownView: UIView {
     public var selectionClearedHandler: (() -> Void)?
     public var sizeChangeHandler: ((CGSize) -> Void)?
     public var showSourceResultsList: (() -> Void)?
+    public var openArtifactHandler: ((String) -> Void)?
     
     private var sourcesButtonText: String
-    
+    private var tryItButtonText: String
+
     public init(
         markdownContent: String,
         customStylesheet: String? = nil,
@@ -37,7 +39,8 @@ public class MarkdownView: UIView {
         textColor: String = "#FFFFFF",
         linkColor: String = "#3ACF9A",
         opacity: CGFloat = 0.85,
-        sourcesButtonText: String = "Sources"
+        sourcesButtonText: String = "Sources",
+        tryItButtonText: String = "Try it"
     ) {
         self.markdownContent = markdownContent
         self.customStylesheet = customStylesheet
@@ -46,6 +49,7 @@ public class MarkdownView: UIView {
         self.linkColor = linkColor
         self.opacity = opacity
         self.sourcesButtonText = sourcesButtonText
+        self.tryItButtonText = tryItButtonText
         let config = WKWebViewConfiguration()
         let userContentController = WKUserContentController()
         config.userContentController = userContentController
@@ -73,6 +77,7 @@ public class MarkdownView: UIView {
         userContentController.add(self, name: "copyToPasteboard")
         userContentController.add(self, name: "sourcesTapped")
         userContentController.add(self, name: "selectionCleared")
+        userContentController.add(self, name: "openArtifact")
         loadHTML()
     }
     
@@ -147,6 +152,7 @@ public class MarkdownView: UIView {
             .replacingOccurrences(of: "PLACEHOLDER_INLINE_ASSETS", with: inlineAssets)
             .replacingOccurrences(of: "PLACEHOLDER_LINK_COLOR", with: linkColor)
             .replacingOccurrences(of: "PLACEHOLDER_BUTTON_TEXT", with: sourcesButtonText)
+            .replacingOccurrences(of: "PLACEHOLDER_TRY_IT_TEXT", with: tryItButtonText)
         
         webView.loadHTMLString(html, baseURL: nil)
     }
@@ -242,6 +248,12 @@ extension MarkdownView: WKNavigationDelegate, WKScriptMessageHandler {
             showSourceResultsList?()
         case "selectionCleared":
             selectionClearedHandler?()
+        case "openArtifact":
+            if let base64 = message.body as? String,
+               let data = Data(base64Encoded: base64),
+               let html = String(data: data, encoding: .utf8) {
+                openArtifactHandler?(html)
+            }
         default:
             break
         }

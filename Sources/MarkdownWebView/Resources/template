@@ -88,12 +88,48 @@
             cursor: pointer;
             font-family: system-ui;
         }
+        .artifact-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10;
+            background: rgba(0, 0, 0, 0.35);
+            cursor: pointer;
+        }
+        .artifact-open-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 12px;
+            color: #FFFFFF;
+            font-size: 15px;
+            font-weight: 500;
+            padding: 10px 20px;
+            cursor: pointer;
+            font-family: system-ui;
+        }
+        .artifact-open-btn svg {
+            width: 16px;
+            height: 16px;
+            fill: currentColor;
+        }
         .artifact-iframe {
             width: 100%;
             border: none;
             background: transparent;
             display: block;
-            min-height: 100px;
+            min-height: 150px;
+            max-height: 70vh;
+            overflow: hidden;
             transition: height 0.2s ease;
         }
         .artifact-code-fallback {
@@ -345,6 +381,7 @@
                     font-variant-numeric: tabular-nums;
                     -webkit-text-size-adjust: 100%;
                     background: transparent;
+                    overflow-x: hidden;
                 }
                 h1 { font-size: 18px; margin: 0 0 8px; }
                 h2 { font-size: 16px; margin: 0 0 6px; }
@@ -443,14 +480,11 @@
                     // --- Resize reporter ---
                     var lastReportedH = 0;
                     var resizeDebounceTimer = 0;
+                    var MAX_ARTIFACT_H = Math.round(window.innerHeight * 0.7) || 600;
                     function reportHeight() {
                         var body = document.body;
-                        var docEl = document.documentElement;
-                        var h = Math.ceil(Math.max(
-                            body.scrollHeight, body.offsetHeight,
-                            docEl.scrollHeight, docEl.offsetHeight
-                        ));
-                        // Only report if height changed by more than 3px — prevents jitter from dynamic text
+                        var h = Math.ceil(body.scrollHeight);
+                        h = Math.min(h, MAX_ARTIFACT_H);
                         if (h > 0 && Math.abs(h - lastReportedH) > 3) {
                             lastReportedH = h;
                             window.parent.postMessage({ type: "artifact-resize", height: h }, "*");
@@ -522,8 +556,21 @@
                 codeFallback.className = 'artifact-code-fallback';
                 codeFallback.appendChild(wrapper.cloneNode(true));
 
+                // "Try it" overlay button centered over iframe
+                const overlay = document.createElement('div');
+                overlay.className = 'artifact-overlay';
+                const openBtn = document.createElement('button');
+                openBtn.className = 'artifact-open-btn';
+                openBtn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M19 19H5V5h7V3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/></svg> PLACEHOLDER_TRY_IT_TEXT';
+                openBtn.addEventListener('click', () => {
+                    const base64 = btoa(unescape(encodeURIComponent(code)));
+                    window.webkit.messageHandlers.openArtifact.postMessage(base64);
+                });
+                overlay.appendChild(openBtn);
+
                 container.appendChild(header);
                 container.appendChild(iframe);
+                container.appendChild(overlay);
                 container.appendChild(codeFallback);
 
                 wrapper.replaceWith(container);
@@ -573,15 +620,16 @@
         };
 
         // Listen for iframe resize messages
+        const MAX_IFRAME_HEIGHT = Math.round(window.innerHeight * 0.7) || 600;
         window.addEventListener('message', (event) => {
             if (event.data && event.data.type === 'artifact-resize') {
                 const iframes = document.querySelectorAll('.artifact-iframe');
                 iframes.forEach((iframe) => {
                     if (iframe.contentWindow === event.source) {
-                        const newH = event.data.height + 'px';
+                        let h = Math.min(event.data.height, MAX_IFRAME_HEIGHT);
+                        const newH = h + 'px';
                         if (iframe.style.height !== newH) {
                             iframe.style.height = newH;
-                            // Re-report parent height via debounced path
                             if (!_resizePending) {
                                 _resizePending = true;
                                 requestAnimationFrame(_flushResize);
