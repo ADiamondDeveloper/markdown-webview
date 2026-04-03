@@ -165,14 +165,14 @@ public class MarkdownView: UIView {
 
     public func updateArtifactTheme(isDark: Bool) {
         self.isDarkTheme = isDark
-        webView.overrideUserInterfaceStyle = isDark ? .dark : .light
+        // Do NOT set overrideUserInterfaceStyle — it leaks prefers-color-scheme
+        // into artifact iframes, causing their JS/canvas to pick wrong colors.
+        // Theme is handled entirely via CSS class + JS invert filter.
         applyThemeClass()
     }
 
     private func applyThemeClass() {
-        let js = isDarkTheme
-            ? "document.body && document.body.classList.add('dark-theme');"
-            : "document.body && document.body.classList.remove('dark-theme');"
+        let js = "if (document.body) { window.updateArtifactTheme && window.updateArtifactTheme(\(isDarkTheme)); }"
         webView.evaluateJavaScript(js, completionHandler: nil)
     }
 

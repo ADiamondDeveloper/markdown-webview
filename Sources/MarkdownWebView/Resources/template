@@ -55,11 +55,7 @@
             transition: opacity 0.2s ease-in-out;
         }
 
-        /* Invert only when app theme ≠ content theme */
-        body.dark-theme .artifact-iframe[data-content-theme="light"],
-        body:not(.dark-theme) .artifact-iframe[data-content-theme="dark"] {
-            filter: invert(1) hue-rotate(180deg);
-        }
+        /* Theme inversion is now handled inside each iframe via computed-style detection */
 
         /* Interactive Artifact Styles */
         .artifact-container {
@@ -375,8 +371,6 @@
             iframe.className = 'artifact-iframe';
             iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin');
             iframe.setAttribute('allowtransparency', 'true');
-            iframe.style.colorScheme = 'normal';
-
             const safeHTML = sanitizeArtifactHTML(htmlContent);
 
             // Default styles for iframe content — compact for mobile
@@ -485,6 +479,51 @@
                         }
                     } catch(e) {}
 
+                    // --- Theme: exact same logic as ArtifactWebViewController.applyThemeIfNeeded() ---
+                    function applyThemeIfNeeded(isDark) {
+                        var tags = ['h1','h2','h3','h4','h5','h6'];
+                        for (var i = 0; i < tags.length; i++) {
+                            var el = document.querySelector(tags[i]);
+                            if (!el) continue;
+                            var c = getComputedStyle(el).color;
+                            var m = c.match(/(\\d+),\\s*(\\d+),\\s*(\\d+)/);
+                            if (!m) continue;
+                            var lum = (parseInt(m[1])*299+parseInt(m[2])*587+parseInt(m[3])*114)/1000;
+                            var contentDark = lum > 128;
+                            var shouldInvert = (isDark && !contentDark) || (!isDark && contentDark);
+                            if (shouldInvert) {
+                                document.documentElement.style.setProperty('filter','invert(1) hue-rotate(180deg)','important');
+                                document.querySelectorAll('img,video').forEach(function(el){
+                                    el.style.setProperty('filter','invert(1) hue-rotate(180deg)','important');
+                                });
+                            } else {
+                                document.documentElement.style.removeProperty('filter');
+                                document.querySelectorAll('img,video').forEach(function(el){
+                                    el.style.removeProperty('filter');
+                                });
+                            }
+                            return;
+                        }
+                    }
+
+                    function checkTheme() {
+                        try {
+                            var isDark = parent.document.body.classList.contains('dark-theme');
+                            applyThemeIfNeeded(isDark);
+                        } catch(e) {}
+                    }
+
+                    checkTheme();
+                    setTimeout(checkTheme, 150);
+                    setTimeout(checkTheme, 500);
+                    setTimeout(checkTheme, 1500);
+
+                    window.addEventListener('message', function(event) {
+                        if (event.data && event.data.type === 'artifact-theme-update') {
+                            applyThemeIfNeeded(event.data.isDark);
+                        }
+                    });
+
                     // --- Resize reporter ---
                     var lastReportedH = 0;
                     var resizeDebounceTimer = 0;
@@ -557,7 +596,6 @@
 
                 // Iframe
                 const iframe = createArtifactIframe(code);
-                iframe.setAttribute('data-content-theme', detectContentTheme(code));
 
                 // Code fallback (the original pre block)
                 const codeFallback = document.createElement('div');
@@ -585,53 +623,23 @@
             });
         }
 
-        // Detect content theme from raw HTML source by checking text color
-        function detectContentTheme(html) {
-            // Check color on body, then h1/h2, then first color declaration
-            var match = html.match(/body\s*\{[^}]*?\bcolor\s*:\s*(#[0-9a-fA-F]{3,8}|rgb[a]?\([^)]+\))/i)
-                     || html.match(/h[12]\s*\{[^}]*?\bcolor\s*:\s*(#[0-9a-fA-F]{3,8}|rgb[a]?\([^)]+\))/i)
-                     || html.match(/\bcolor\s*:\s*(#[0-9a-fA-F]{3,8}|rgb[a]?\([^)]+\))/i);
-            if (!match) return 'light'; // no color found — default web has dark text = light theme
-
-            var color = match[1];
-            var lum = colorLuminance(color);
-            // Dark text (low luminance) = light theme; Light text (high luminance) = dark theme
-            return lum > 128 ? 'dark' : 'light';
-        }
-
-        function colorLuminance(color) {
-            var r, g, b;
-            if (color.charAt(0) === '#') {
-                var hex = color.slice(1);
-                if (hex.length === 3) {
-                    r = parseInt(hex[0] + hex[0], 16);
-                    g = parseInt(hex[1] + hex[1], 16);
-                    b = parseInt(hex[2] + hex[2], 16);
-                } else {
-                    r = parseInt(hex.slice(0, 2), 16);
-                    g = parseInt(hex.slice(2, 4), 16);
-                    b = parseInt(hex.slice(4, 6), 16);
-                }
-            } else {
-                var parts = color.match(/(\d+),\s*(\d+),\s*(\d+)/);
-                if (!parts) return 0;
-                r = parseInt(parts[1]);
-                g = parseInt(parts[2]);
-                b = parseInt(parts[3]);
-            }
-            return (r * 299 + g * 587 + b * 114) / 1000;
-        }
-
-        // Theme: toggle CSS class on body — filter is applied via CSS rule
+        // Theme: toggle CSS class on body + notify all artifact iframes
         window.updateArtifactTheme = function(isDark) {
             document.body.classList.toggle('dark-theme', isDark);
+            // Broadcast theme change to all artifact iframes
+            document.querySelectorAll('.artifact-iframe').forEach(function(iframe) {
+                try {
+                    iframe.contentWindow.postMessage({ type: 'artifact-theme-update', isDark: isDark }, '*');
+                } catch(e) {}
+            });
         };
 
         // Listen for iframe resize messages
         const MAX_IFRAME_HEIGHT = Math.round(window.innerHeight * 0.7) || 600;
         window.addEventListener('message', (event) => {
-            if (event.data && event.data.type === 'artifact-resize') {
-                const iframes = document.querySelectorAll('.artifact-iframe');
+            if (!event.data || !event.data.type) return;
+            const iframes = document.querySelectorAll('.artifact-iframe');
+            if (event.data.type === 'artifact-resize') {
                 iframes.forEach((iframe) => {
                     if (iframe.contentWindow === event.source) {
                         let h = Math.min(event.data.height, MAX_IFRAME_HEIGHT);
