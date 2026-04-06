@@ -22,6 +22,12 @@ public class MarkdownView: UIView {
     private var opacity: CGFloat
     private var isDarkTheme: Bool = false
     
+    /// The last content height reported by the web view's ResizeObserver.
+    /// Use this instead of `frame.size.height` when triggering `sizeChangeHandler`
+    /// manually, because Auto Layout may have stretched the frame beyond the
+    /// actual content height.
+    public private(set) var contentHeight: CGFloat = 0
+
     public var onTapLink: ((URL) -> Void)?
     public var renderedContentHandler: ((String) -> Void)?
     public var selectionClearedHandler: (() -> Void)?
@@ -229,6 +235,7 @@ extension MarkdownView: WKNavigationDelegate, WKScriptMessageHandler {
         switch message.name {
         case "sizeChangeHandler":
             if let height = message.body as? CGFloat {
+                contentHeight = height
                 invalidateIntrinsicContentSize()
                 frame.size.height = height
                 sizeChangeHandler?(self.frame.size)
