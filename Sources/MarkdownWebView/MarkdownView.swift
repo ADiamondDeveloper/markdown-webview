@@ -43,7 +43,7 @@ public class MarkdownView: UIView {
         customStylesheet: String? = nil,
         mainFont: UIFont = .systemFont(ofSize: 17),
         textColor: String = "#FFFFFF",
-        linkColor: String = "#3ACF9A",
+        linkColor: String = "#0EAB75",
         opacity: CGFloat = 0.85,
         sourcesButtonText: String = "Sources",
         tryItButtonText: String = "Try it"
