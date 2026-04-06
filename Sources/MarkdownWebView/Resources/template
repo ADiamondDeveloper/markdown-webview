@@ -318,13 +318,17 @@
         // --- Streaming: hide incomplete HTML code blocks ---
         function preprocessStreamingArtifacts(md) {
             // Check if there's an unclosed ```html block (streaming in progress)
-            // Match ```html that doesn't have a closing ```
-            const openPattern = /```html\s*\n/gi;
-            const allFences = [...md.matchAll(/```/g)];
-
-            // Find all ```html openings
-            const htmlOpens = [...md.matchAll(/```html\s*\n/gi)];
-            if (htmlOpens.length === 0) return md;
+            // Match ```html with optional whitespace/newline OR at end of string
+            const htmlOpens = [...md.matchAll(/```html\s*(?:\n|$)/gi)];
+            if (htmlOpens.length === 0) {
+                // Also catch ```html without trailing newline mid-stream (e.g. "```html" at very end)
+                if (/```html\s*$/i.test(md)) {
+                    const idx = md.search(/```html\s*$/i);
+                    const beforeBlock = md.substring(0, idx);
+                    return beforeBlock + '\n<div class="artifact-streaming-placeholder"><div class="artifact-streaming-spinner"></div>Generating interactive content...</div>\n';
+                }
+                return md;
+            }
 
             const lastOpen = htmlOpens[htmlOpens.length - 1];
             const afterOpen = md.substring(lastOpen.index + lastOpen[0].length);
